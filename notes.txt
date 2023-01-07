@@ -1,0 +1,125 @@
+/// 1. define the actions (which will interact with the bloc)
+///
+/// 2. Define a list of urls for the json files (in an oop way with enums)
+///
+/// 3. Since these are just the definitions of the urls (..and Dart doesnt have
+/// enums with associated values like in Rust), define an
+/// extension to get the real urls for the enum values
+///
+/// 4. concrete implementation of LoadAction class (notice the "implements"
+/// which indicates that the abstract class in dart is actually an interface)
+///
+/// 5. create the model: Person class..and then allow that class to be initialized
+/// from a json object, which is usually a Map<String,dynamic>
+///
+/// 6. download and parse the 2 json files. So create a helper function which
+/// gets an url and returns a Future<Iterable<Person>>, means: this fn should
+/// download from that url, parse it as json, and then parse that json as a list
+/// or iterable of Person instances (use HttpClient for that instead of a 3rd
+/// party package, the io package already includes the neccessary functionality)
+///
+/// 7. Define the result of the bloc.. because bloc has its input and a output and
+/// you already defined the input with LoadPersonsAction, now you have to specify the
+/// state of this bloc which is the object it actually hold onto (as the "application state")
+/// and you can call it: FetchResult
+/// also: introduce the caching algorythm by giving it the property isRetrievedByCache
+///
+/// 8. Now that you have the input for the bloc (loadAction) and also the
+/// output (the fetch result) you can now define the 'bloc header'
+/// and you can call it: PersonsBloc
+/// and remember: bloc expects an event and a state (Bloc<Event,State>) in this case:
+/// Bloc<LoadAction, FetchResult?> and since the fetch result (state) is empty in
+/// the beginning the initial state is null
+/// also: dont forget the _cache which is defined as a Map of PersonUrl as key and
+/// Iterable<Person> as value => Map<PersonUrl, Iterable<Person>>
+///
+/// important part now: how to handle incoming actions?
+/// The way you can do this is by using the method "on" inside the Bloc constructor
+/// which has 2 parameters: event & emit
+/// in other words: given a specific event/action, what state do you want to emit
+///
+/// 9. Now that you have a bloc, you need to somehow provide this bloc to the
+/// application
+///
+
+
+
+
+
+Testing
+1. flutter pub add bloc_test
+2. refactor code - code is split into several files
+3. get rid of PersonUrl, which holds onto hardcoded urls and needs an extension
+make the 2 urls global const variables (const persons1Url = 'http://10.0.2.2:5500/api/persons1.json')
+and in the LoadPersonAction you require a String url (instead of: PersonUrl url)
+4. in addition to the injected url the LoadPersonAction gets a loader
+-> otherwise you always need a webserver running in order to serve the data from the given url
+-> but to make it testible, you ll  mock the data and fake an Http Request
+5. Therefore you can make a typedef like
+
+typedef PersonsLoader = Future<Iterable<Person>> Function(String url);
+
+..which returns a Future of Iterable<Person> 
+and in LoadPersonAction you add:
+final PersonsLoader loader;
+
+-> now you can inject ANY loader in this and mock that/make it testible with that dependency injection
+
+6. Define equality on Iterable
+-> write an extension so that the ordering of the elements inside an Iterable<Person> doesnt matter
+-> length must be equal (comparing) to another Iterable AND using Sets and intersection to check in an 
+-> easy way if they are equal (putting both in a set and then compare the length of the intersection with the original length)
+
+extension IsEqualToIgnoringOrdering<T> on Iterable<T> {
+  bool isEqualToIgnoringOrdering(Iterable<T> other) => 
+    length == other.length && {...this}.intersect({...other}).length == length;
+}
+
+7. update equality / hashcode  on FetchResult
+@override
+bool operator ==(covariant Fetchresult other) => 
+  persons.isEqualToIgnoringOrdering(other.persons) && 
+  isRetrievedFromCache == other.isRetrievedFromCache;
+
+8. Update the PersonsBloc after these changes:
+-> take away the dependency of the bloc on the getPersons function
+-> cause as long as you have a hardcoded dependency on getPersons the bloc is NOT testible!
+=> good thing is that every event/action (of type LoadPersonsAction) has a loader now!
+=> thats why you could now write in the else block inside PersonsBloc (the caching part is fine as it is)...
+
+final loader = event.loader;
+final persons = await loader(url);
+
+..and the rest of the code is the same
+
+9. finally in main.dart 
+change to..
+LoadPersonsAction(loader: getPersons, url: persons1Url)
+
+
+
+----------------------------------------------------
+
+
+/* problem:
+persons[index] => persons is an Iterable and the
+operator [] isnt defined for the type 'Iterable<String>'
+
+test:
+const Iterable<String> names = ['foo', 'bar'];
+
+..which surprises because List inherits from/is an Iterable
+
+const List<String> names = ['foo', 'bar'];
+
+-> baz in the void would be a String (though this index doesnt exist)
+
+..which is the second problem: it should indicate, that baz should be an optional
+String, because index 2 doesnt exist and thus should return null
+
+void testIt() {
+  final baz = names[2];
+}
+
+-> extension that solves that issue (note: T? => optionally return a value)
+*/
